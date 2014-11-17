@@ -1,0 +1,36 @@
+<%= @app_environment %>:
+  cube:
+    api_batch_post: <%= @config['cube']['api_batch_post'] || false %>
+    api_key: <%= @config['cube']['api_key'] %>
+    api_request_timeout: <%= @config['cube']['api_request_timeout'] %>
+    api_url: <%= @config['cube']['api_url'] %>
+<% @daemon_dir = @config['daemon']['dir'] || @dir %>
+  daemon:
+    app_name: <%= @config['id'] || 'cube_vmware_miner' %>
+    backtrace: <%= @config['daemon']['backtrace'] || false %>
+    dir_mode: <%= @config['daemon']['dir_mode'] %>
+    dir: <%= @daemon_dir %>
+    <% if @config['daemon']['log'] %>
+    log:
+      logger: <%= @config['daemon']['log']['logger'] %>
+      <% case @config['daemon']['log']['logger']
+         when 'file' %>
+      log_file: <%= File.join(@daemon_dir, @config['daemon']['log']['log_file']) %>
+      shift_age: <%= @config['daemon']['log']['shift_age'] %>
+      <% when 'syslog' %>
+      log_facility: <%= @config['daemon']['log']['log_facility'] %>
+      <% end %>
+    <% end %>
+    monitor: <%= @config['daemon']['monitor'] %>
+  scheduler:
+    frequency: <%= @config['scheduler']['frequency'] || '0.3s' %>
+    interval: <%= @config['scheduler']['interval'] || '30m' %>
+    timeout: <%= @config['scheduler']['timeout'] || '10m' %>
+  vmware:
+    host: <%= @config['vmware']['host'] %>
+    insecure: <%= @config['vmware']['insecure'] || false %>
+    password: <%= @config['vmware']['password'] %>
+    path: <%= @config['vmware']['path'] || '/sdk' %>
+    port: <%= @config['vmware']['port'] || 443 %>
+    ssl: <%= @config['vmware']['ssl'] || true %>
+    user: <%= @config['vmware']['user'] %>
