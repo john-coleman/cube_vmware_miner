@@ -2,7 +2,6 @@ require 'ipaddr'
 require 'json'
 require 'rbvmomi'
 require 'rufus-scheduler'
-require 'pry'
 
 module Cube
   module Daemon
