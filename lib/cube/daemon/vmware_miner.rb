@@ -1,7 +1,7 @@
 require 'ipaddr'
 require 'json'
 require 'rbvmomi'
-require 'rufus-scheduler'
+require 'rest_client'
 
 module Cube
   module Daemon
@@ -57,6 +57,13 @@ module Cube
         else
           @logger.error "VM #{vm_name} FQDN: #{v[:hostname]}.#{v[:domain]}, GuestTools: #{v[:tools_status]}, GuestToolsRunning: #{v[:tools_running_status]}"
         end
+      rescue ::RestClient::Exception => e
+        if e.http_code >= 500
+          @logger.error "VM #{vm_name} #{e.message}: #{e.response.split(/\n/).values_at(0, 5).join(':').gsub(/\(\) /, '')}"
+          @logger.debug "VM #{vm_name} #{e.message}: #{e.response}"
+        else
+          @logger.error "VM #{vm_name} #{e.message}: #{e.response}"
+        end
       end
 
       def dc
@@ -93,6 +100,14 @@ module Cube
         nil
       end
 
+      def parse_domain(vm)
+        if vm.guest[:toolsRunningStatus] == 'guestToolsRunning' && vm.guest[:hostName]
+          /\A(?<hostname>[\w\-]+)(\.(?<domain>[\w\-.]+))?\z/.match(vm.guest[:hostName])[:domain]
+        else
+          nil
+        end
+      end
+
       def parse_hostname(vm)
         if vm.guest[:toolsRunningStatus] == 'guestToolsRunning' && vm.guest[:hostName]
           /\A(?<hostname>[\w\-]+)(\.(?<domain>[\w\-.]+))?\z/.match(vm.guest[:hostName])[:hostname]
@@ -111,14 +126,6 @@ module Cube
           end
         end
         ipv4_addresses
-      end
-
-      def parse_domain(vm)
-        if vm.guest[:toolsRunningStatus] == 'guestToolsRunning' && vm.guest[:hostName]
-          /\A(?<hostname>[\w\-]+)(\.(?<domain>[\w\-.]+))?\z/.match(vm.guest[:hostName])[:domain]
-        else
-          nil
-        end
       end
 
       def prepare_device_params(vmhash)
