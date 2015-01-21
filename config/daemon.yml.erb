@@ -5,6 +5,12 @@
     api_request_timeout: <%= @config['cube']['api_request_timeout'] %>
     api_url: <%= @config['cube']['api_url'] %>
 <% @daemon_dir = @config['daemon']['dir'] || @dir %>
+  dns:
+    known_domains:
+    <% @config['dns']['known_domains'].each do |domain| %>
+      - <%= domain %>
+    <% end %>
+    timeout: <%= @config['dns']['timeout'] %>
   daemon:
     app_name: <%= @config['id'] || 'cube_vmware_miner' %>
     backtrace: <%= @config['daemon']['backtrace'] || false %>

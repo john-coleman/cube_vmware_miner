@@ -19,6 +19,7 @@ group :test, :development do
   gem 'awesome_print'
   gem 'fakefs'
   gem 'pry'
+  gem 'pry-byebug'
   gem 'rake'
   gem 'rspec'
   gem 'rspec-fire'

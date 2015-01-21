@@ -8,24 +8,29 @@ describe Cube::Daemon::VmwareMiner do
   let(:api_client) { double }
   let(:api_response) { '{}' }
   let(:child_vm) do
-    vm = instance_double(RbVmomi::VIM::VirtualMachine).as_null_object
-    allow(RbVmomi::VIM::VirtualMachine).to receive(:===).with(vm).and_return(true)
-    allow(vm).to receive(:===).with(RbVmomi::VIM::VirtualMachine).and_return(true)
-    vm
-  end
-  let(:child_vm_config) do
-    config = instance_double(RbVmomi::VIM::VirtualMachineConfigInfo).as_null_object
-    allow(config).to receive(:[]).with(:guestFullName).and_return(vm[:guestFullName])
-    allow(config).to receive(:[]).with(:name).and_return(vm[:name])
-    config
+    child_vm = spy(RbVmomi::VIM::VirtualMachine)
+    allow(RbVmomi::VIM::VirtualMachine).to receive(:===).with(child_vm).and_return(true)
+    allow(child_vm).to receive(:===).with(RbVmomi::VIM::VirtualMachine).and_return(true)
+    allow(child_vm).to receive(:guest).and_return(child_vm_guest)
+    allow(child_vm).to receive(:summary).and_return(child_vm_summary)
+    child_vm
   end
   let(:child_vm_guest) do
-    guest = instance_double(RbVmomi::VIM::GuestInfo).as_null_object
+    guest = spy(RbVmomi::VIM::GuestInfo)
     allow(guest).to receive(:net).and_return(child_vm_net)
+    allow(guest).to receive(:ipStack).and_return([child_vm_guest_stack_info])
+    allow(guest).to receive(:[]).with(:hostName).and_return(vm[:hostName])
     allow(guest).to receive(:[]).with(:toolsRunningStatus).and_return(vm[:toolsRunningStatus])
     allow(guest).to receive(:[]).with(:toolsStatus).and_return(vm[:toolsStatus])
-    allow(guest).to receive(:[]).with(:hostName).and_return(vm[:hostName])
+    allow(guest).to receive(:[]).with(:toolsVersion).and_return(vm[:toolsVersion])
+    allow(guest).to receive(:[]).with(:toolsVersionStatus).and_return(vm[:toolsVersionStatus])
+    allow(guest).to receive(:[]).with(:toolsVersionStatus2).and_return(vm[:toolsVersionStatus2])
     guest
+  end
+  let(:child_vm_guest_stack_info) do
+    stack_info = spy(RbVmomi::VIM::GuestStackInfo)
+    allow(stack_info).to receive(:dnsConfig).and_return(child_vm_net_dns_config_info)
+    stack_info
   end
   let(:child_vm_net) do
     net = { ipAddress: [vm[:ipv4_addresses].first[:ipv4_address]],
@@ -33,18 +38,35 @@ describe Cube::Daemon::VmwareMiner do
     }
     [net]
   end
+  let(:child_vm_net_dns_config_info) do
+    dns_config = spy(RbVmomi::VIM::NetDnsConfigInfo)
+    allow(dns_config).to receive(:hostName).and_return(vm[:hostName])
+    allow(dns_config).to receive(:domainName).and_return(vm[:domainName])
+    dns_config
+  end
   let(:child_vm_summary) do
-    summary = instance_double(RbVmomi::VIM::VirtualMachineSummary).as_null_object
-    allow(summary).to receive(:config).and_return(child_vm_config)
+    summary = spy(RbVmomi::VIM::VirtualMachineSummary)
+    allow(summary).to receive(:config).and_return(child_vm_summary_config)
     summary
   end
+  let(:child_vm_summary_config) do
+    config = spy(RbVmomi::VIM::VirtualMachineConfigInfo)
+    allow(config).to receive(:[]).with(:guestFullName).and_return(vm[:guestFullName])
+    allow(config).to receive(:[]).with(:name).and_return(vm[:name])
+    config
+  end
   let(:child_folder) do
-    folder = instance_double(RbVmomi::VIM::Folder, childEntity: []).as_null_object
+    folder = spy(RbVmomi::VIM::Folder, childEntity: [])
     allow(RbVmomi::VIM::Folder).to receive(:===).with(folder).and_return(true)
     allow(folder).to receive(:===).with(RbVmomi::VIM::Folder).and_return(true)
     folder
   end
   let(:child_unrecognized) { double }
+  let(:child_unrecognized_name) do
+    child_unrecognized_name = spy(RbVmomi::VIM::VirtualApp)
+    allow(child_unrecognized_name).to receive(:name).and_return('Unrecognized childEntity Class')
+    child_unrecognized_name
+  end
   let(:child_entity) { [] }
   let(:config) do
     {
@@ -53,6 +75,9 @@ describe Cube::Daemon::VmwareMiner do
         'api_key' => 'some-api-key',
         'api_timeout' => 10,
         'api_url' => 'http://cube.example.com'
+      },
+      'dns' => {
+        'known_domains' => dns_known_domains
       },
       'vmware' => {
         'host' => 'vcenter.example.com',
@@ -66,8 +91,12 @@ describe Cube::Daemon::VmwareMiner do
     }
   end
   let(:dc) { double }
+  let(:dns) { spy(Resolv) }
+  let(:dns_addresses) { [] }
+  let(:dns_known_domains) { ['example.com'] }
+  let(:dns_names) { [] }
   let(:folder) { double }
-  let(:logger) { instance_double(Logger).as_null_object }
+  let(:logger) { spy(Logger) }
   let(:message) do
     {
       'hostname' => 'dummy-vm-1',
@@ -78,16 +107,33 @@ describe Cube::Daemon::VmwareMiner do
       'os' => 'windows'
     }
   end
+  let(:triage) { {} }
   let(:vm) do
     {
       name: 'DummyVM1',
       guestFullName: 'Ubuntu Linux (64-bit)',
       hostName: 'dummy-vm-1.example.com',
+      domainName: 'example.com',
       ipv4_addresses: [
         { ipv4_address: '1.2.3.2', mac_address: '01:23:45:67:89:02' }
       ],
       toolsRunningStatus: 'guestToolsRunning',
       toolsStatus: 'toolsOk'
+    }
+  end
+  let(:vmhash) do
+    {
+      hostname: 'DummyVM3',
+      hostnames: [],
+      domains: [],
+      ipv4_addresses: [
+        {
+          a_records: [],
+          ipv4_address: '1.2.3.3',
+          mac_address: '00:11:22:33:33:33',
+          ptr_records: []
+        }
+      ]
     }
   end
   let(:vms) do
@@ -111,8 +157,12 @@ describe Cube::Daemon::VmwareMiner do
     allow(api_client).to receive(:send_post_request).and_return(api_response)
     allow(folder).to receive(:childEntity).and_return(child_entity)
     allow(dc).to receive(:vmFolder).and_return(folder)
+    allow(dns).to receive(:getaddresses).and_return(dns_addresses)
+    allow(dns).to receive(:getnames).and_return(dns_names)
     subject.instance_variable_set(:@api_client, api_client)
     subject.instance_variable_set(:@dc, dc)
+    subject.instance_variable_set(:@dns, dns)
+    subject.instance_variable_set(:@triage, triage)
     subject.instance_variable_set(:@vms, vms)
     subject.instance_variable_set(:@vsphere, vsphere)
   end
@@ -200,45 +250,70 @@ describe Cube::Daemon::VmwareMiner do
     end
 
     context 'when child is not recognised' do
-      let(:child_entity) { [child_unrecognized] }
-      it 'logs debug message' do
-        expect(logger).to receive(:debug)
-        subject.parse_folder(folder)
+      context 'and responds to :name' do
+        let(:child_entity) { [child_unrecognized_name] }
+
+        it 'logs debug message' do
+          expect(logger).to receive(:debug).with(/Unrecognized childEntity.*Unrecognized childEntity Class/).at_least(:once)
+          subject.parse_folder(folder)
+        end
+      end
+
+      context 'and does not respond to :name' do
+        let(:child_entity) { [child_unrecognized] }
+
+        it 'logs debug message' do
+          expect(logger).to receive(:debug).with(/Unknown childEntity/).at_least(:once)
+          subject.parse_folder(folder)
+        end
       end
     end
   end
 
   describe '#parse_vm' do
-    let(:child_vm) do
-      vm = instance_double(RbVmomi::VIM::VirtualMachine).as_null_object
-      allow(RbVmomi::VIM::VirtualMachine).to receive(:===).with(vm).and_return(true)
-      allow(vm).to receive(:===).with(RbVmomi::VIM::VirtualMachine).and_return(true)
-      allow(vm).to receive(:guest).and_return(child_vm_guest)
-      allow(vm).to receive(:summary).and_return(child_vm_summary)
-      vm
-    end
-
     it 'adds vm to vms collection' do
       expect { subject.parse_vm(child_vm) }.to change { vms.keys.count }.by(1)
     end
 
     it 'adds vm_name key to vmhash' do
       subject.parse_vm(child_vm)
-      expect(vms).to have_key(child_vm_config[:name])
+      expect(vms).to have_key(child_vm_summary_config[:name])
     end
 
     context 'recognised os' do
       it 'adds os key to vmhash' do
         subject.parse_vm(child_vm)
-        expect(vms[child_vm_config[:name]][:os]).to eq 'linux'
+        expect(vms[child_vm_summary_config[:name]][:os]).to eq 'linux'
       end
     end
 
     context 'unrecognised os' do
-      it 'does not add os key to vmhash' do
+      it 'adds os key to vmhash with null value' do
         vm[:guestFullName] = 'NeXTSTEP 3.3'
         subject.parse_vm(child_vm)
-        expect(vms[child_vm_config[:name]]).to_not have_key(:os)
+        expect(vms[child_vm_summary_config[:name]][:os]).to eq nil
+      end
+    end
+
+    context 'guest tools not installed' do
+      let(:vm) do
+        {
+          name: 'NoToolsVM1',
+          guestFullName: 'Ubuntu Linux (64-bit)',
+          ipv4_addresses: [
+            { ipv4_address: '1.2.4.1', mac_address: '01:23:45:67:89:02' }
+          ]
+        }
+      end
+
+      it 'calls enhance_vm_fqdn' do
+        expect(subject).to receive(:enhance_vm_fqdn)
+        subject.parse_vm(child_vm)
+      end
+
+      it 'adds hostname key to vmhash with normalized VM name value' do
+        subject.parse_vm(child_vm)
+        expect(vms[child_vm_summary_config[:name]][:hostname]).to eq 'notoolsvm1'
       end
     end
   end
@@ -294,6 +369,229 @@ describe Cube::Daemon::VmwareMiner do
       it 'does not post vm to api' do
         expect(api_client).to_not receive(:send_post_request)
         subject.post_vm('DummyVM2', {})
+      end
+    end
+  end
+
+  describe '#enhance_vm_fqdn' do
+    context 'for a cleanly-named VM' do
+      it 'parses VM name to vmhname' do
+        vm[:name] = 'Cleanly-Named.example.com'
+        subject.enhance_vm_fqdn(child_vm, vmhash)
+        expect(vmhash[:vm_name]).to eq vm[:name]
+        expect(vmhash[:vmhname]).to eq 'cleanly-named'
+      end
+    end
+
+    context 'for an uncleanly-named VM' do
+      it 'parses VM name to vmhname' do
+        vm[:name] = '(NOT A) Cleanly-Nameed.example.com VM'
+        subject.enhance_vm_fqdn(child_vm, vmhash)
+        expect(vmhash[:vm_name]).to eq vm[:name]
+        expect(vmhash[:vmhname]).to eq nil
+      end
+    end
+
+    it 'calls #query_dns_with_vm_hostname' do
+      expect(subject).to receive(:query_dns_with_vm_hostname).and_return(vmhash)
+      subject.enhance_vm_fqdn(child_vm, vmhash)
+    end
+
+    it 'calls #query_dns_with_vm_ipv4' do
+      expect(subject).to receive(:query_dns_with_vm_ipv4).and_return(vmhash)
+      subject.enhance_vm_fqdn(child_vm, vmhash)
+    end
+
+    it 'calls #select_hostname' do
+      expect(subject).to receive(:select_hostname).and_return(vmhash)
+      subject.enhance_vm_fqdn(child_vm, vmhash)
+    end
+
+    it 'calls #select_domain' do
+      expect(subject).to receive(:select_domain).and_return(vmhash)
+      subject.enhance_vm_fqdn(child_vm, vmhash)
+    end
+  end
+
+  describe '#query_dns_with_vm_hostname' do
+    it 'queries dns for hostname' do
+      expect(dns).to receive(:getaddresses)
+      subject.query_dns_with_vm_hostname(vmhash)
+    end
+
+    context 'fqdn returns IP' do
+      before(:each) do
+        allow(dns).to receive(:getaddresses).and_return([vmhash[:ipv4_addresses][0][:ipv4_address]])
+      end
+
+      it 'adds fqdn to vmhash ipv4_address a_records' do
+        subject.query_dns_with_vm_hostname(vmhash)
+        expect(vmhash[:ipv4_addresses][0][:a_records]).to include("#{vmhash[:hostname]}.example.com")
+      end
+
+      it 'adds domain to vmhash domains' do
+        subject.query_dns_with_vm_hostname(vmhash)
+        expect(vmhash[:domains]).to include('example.com')
+      end
+    end
+  end
+
+  describe '#query_dns_with_vm_ipv4' do
+    it 'queries dns for ipv4' do
+      expect(dns).to receive(:getnames)
+      subject.query_dns_with_vm_ipv4(vmhash)
+    end
+
+    context 'ipv4 returns names' do
+      before(:each) do
+        allow(dns).to receive(:getnames).and_return(["#{vmhash[:hostname]}.example.com"])
+      end
+
+      it 'adds fqdn to vmhash ipv4_address ptr_records' do
+        subject.query_dns_with_vm_ipv4(vmhash)
+        expect(vmhash[:ipv4_addresses][0][:ptr_records]).to include("#{vmhash[:hostname]}.example.com")
+      end
+
+      it 'adds domain to vmhash domains' do
+        subject.query_dns_with_vm_ipv4(vmhash)
+        expect(vmhash[:domains]).to include('example.com')
+      end
+    end
+
+  end
+
+  describe '#select_domain' do
+    let(:vmhash) { { domain: 'example.com', domains: [], vm_name: 'DummyVM3' } }
+
+    context 'no domains found' do
+      it 'logs error message' do
+        expect(logger).to receive(:error)
+        subject.select_domain(vmhash)
+      end
+    end
+
+    context 'single domain found' do
+      context 'vmhash domain key defined' do
+        let(:vmhash) { { domain: 'example.com', domains: ['example1.com'], vm_name: 'DummyVM3' } }
+
+        it 'logs info message' do
+          expect(logger).to receive(:info)
+          subject.select_domain(vmhash)
+        end
+
+        it 'does not change vmhash domain key' do
+          subject.select_domain(vmhash)
+          expect(vmhash[:domain]).to eq 'example.com'
+        end
+      end
+
+      context 'vmhash domain key not defined' do
+        let(:vmhash) { { domains: ['example1.com'], vm_name: 'DummyVM3' } }
+
+        it 'logs info message' do
+          expect(logger).to receive(:info)
+          subject.select_domain(vmhash)
+        end
+
+        it 'sets vmhash domain key' do
+          subject.select_domain(vmhash)
+          expect(vmhash[:domain]).to eq 'example1.com'
+        end
+      end
+    end
+
+    context 'multiple domains found' do
+      let(:vmhash) { { domains: ['example.com', 'example2.com'], vm_name: 'DummyVM3' } }
+
+      it 'logs error message' do
+        expect(logger).to receive(:error)
+        subject.select_domain(vmhash)
+      end
+
+      it 'does not change vmhash domain key' do
+        subject.select_domain(vmhash)
+        expect(vmhash).to_not have_key(:domain)
+      end
+    end
+  end
+
+  describe '#select_hostname' do
+    let(:vmhash) { { hostnames: [], vmhname: 'dummyvm3', vm_name: 'DummyVM3' } }
+
+    context 'no hostnames found' do
+      it 'logs error message' do
+        expect(logger).to receive(:error)
+        subject.select_hostname(vmhash)
+      end
+
+      it 'sets vmhash hostname to vmhname' do
+        subject.select_hostname(vmhash)
+        expect(vmhash[:hostname]).to eq vmhash[:vmhname]
+      end
+    end
+
+    context 'single hostname found' do
+      context 'vmhash hostname key defined' do
+        let(:vmhash) { { hostnames: ['dummyvm4'], hostname: 'dummyvm3', vmhname: 'dummyvm3', vm_name: 'DummyVM3' } }
+
+        it 'logs info message' do
+          expect(logger).to receive(:info)
+          subject.select_hostname(vmhash)
+        end
+
+        it 'does not change vmhash hostname key' do
+          subject.select_hostname(vmhash)
+          expect(vmhash[:hostname]).to eq 'dummyvm3'
+        end
+      end
+
+      context 'vmhash hostname key not defined' do
+        let(:vmhash) { { hostnames: ['dummyvm3'], vmhname: 'dummyvm3', vm_name: 'DummyVM3' } }
+
+        it 'logs info message' do
+          expect(logger).to receive(:info)
+          subject.select_hostname(vmhash)
+        end
+
+        it 'sets vmhash hostname key' do
+          subject.select_hostname(vmhash)
+          expect(vmhash[:hostname]).to eq 'dummyvm3'
+        end
+      end
+    end
+
+    context 'multiple hostnames found' do
+      let(:vmhash) { { hostnames: %w(dummyvm3 othervm), vmhname: 'dummyvm3', vm_name: 'DummyVM3' } }
+
+      it 'logs error message' do
+        expect(logger).to receive(:error)
+        subject.select_hostname(vmhash)
+      end
+
+      context 'with matching parsed VM name' do
+        it 'logs warning message' do
+          expect(logger).to receive(:warn)
+          subject.select_hostname(vmhash)
+        end
+
+        it 'sets vmhash hostname key' do
+          subject.select_hostname(vmhash)
+          expect(vmhash[:hostname]).to eq(vmhash[:vmhname])
+        end
+      end
+
+      context 'without matching parsed VM name' do
+        let(:vmhash) { { hostnames: %w(dummyvm4 othervm), vmhname: 'dummyvm3', vm_name: 'DummyVM3' } }
+
+        it 'does not log warning message' do
+          expect(logger).to_not receive(:warn)
+          subject.select_hostname(vmhash)
+        end
+
+        it 'does not set vmhash hostname key' do
+          subject.select_hostname(vmhash)
+          expect(vmhash).to_not have_key(:hostname)
+        end
       end
     end
   end

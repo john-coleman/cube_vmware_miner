@@ -15,6 +15,10 @@ development:
       logger: syslog
       shift_age: 4
     monitor: false
+  dns:
+    known_domains:
+      - example.com
+    timeout: 3
   scheduler:
     frequency: '0.5s'
     interval: '10s'
@@ -44,6 +48,10 @@ test:
       logger: syslog
       shift_age: 4
     monitor: false
+  dns:
+    known_domains:
+      - example.com
+    timeout: 3
   scheduler:
     frequency: '0.3s'
     interval: '10s'
@@ -73,6 +81,10 @@ production:
       logger: syslog
       shift_age: 4
     monitor: false
+  dns:
+    known_domains:
+      - example.com
+    timeout: 3
   scheduler:
     frequency: '0.5s'
     interval: '30m'
