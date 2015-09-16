@@ -11,3 +11,4 @@ cube_vmware_miner
 * Can log to syslog, local file or STDOUT
 
 ======
+Author: John Coleman (<john-coleman@noreply.users.github.com>)
